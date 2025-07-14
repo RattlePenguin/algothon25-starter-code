@@ -23,8 +23,7 @@ def getMyPosition(prcSoFar):
     global currentPos
     (nins, nt) = prcSoFar.shape
 
-    for i in range(nins):
-        currentPos[i] = getMyPositionOne(prcSoFar[i])
+    currentPos[0] = getMyPositionOne(prcSoFar[0])
 
     return currentPos
 
@@ -45,20 +44,28 @@ def getMyPositionOne(prcSoFarOne):
     # Exit strategy
     if state['active']:
         if state['direction'] == 1:
-            if priceToday <= state['stopLoss'] or priceToday >= state['takeProfit']:
-                print(f"Exiting LONG at day {today}: price={priceToday:.2f}")
+            if priceToday <= state['stopLoss']:
+                print(f"Exiting LONG at day {today}: price={priceToday:.2f} — Hit STOP LOSS at {state['stopLoss']:.2f}")
+                state['active'] = False
+                return 0
+            elif priceToday >= state['takeProfit']:
+                print(f"Exiting LONG at day {today}: price={priceToday:.2f} — Hit TAKE PROFIT at {state['takeProfit']:.2f}")
                 state['active'] = False
                 return 0
             else:
-                return 100  # maintain long position
+                return 1000  # maintain long position
 
         elif state['direction'] == -1:
-            if priceToday >= state['stopLoss'] or priceToday <= state['takeProfit']:
-                print(f"Exiting SHORT at day {today}: price={priceToday:.2f}")
+            if priceToday >= state['stopLoss']:
+                print(f"Exiting SHORT at day {today}: price={priceToday:.2f} — Hit STOP LOSS at {state['stopLoss']:.2f}")
+                state['active'] = False
+                return 0
+            elif priceToday <= state['takeProfit']:
+                print(f"Exiting SHORT at day {today}: price={priceToday:.2f} — Hit TAKE PROFIT at {state['takeProfit']:.2f}")
                 state['active'] = False
                 return 0
             else:
-                return -100  # maintain short position
+                return -1000  # maintain short position
 
 
     df = getEMAPosition(df, 50, 200)
@@ -75,7 +82,7 @@ def getMyPositionOne(prcSoFarOne):
                 'takeProfit': tp
             }
             print(f"Entering LONG at day {today}: price={entry:.2f}, stop={stop:.2f}, tp={tp:.2f}")
-            return 100
+            return 1000
 
         elif priceToday < priceYesterday:  # bearish candle
             entry = priceToday
@@ -88,7 +95,7 @@ def getMyPositionOne(prcSoFarOne):
                 'takeProfit': tp
             }
             print(f"Entering SHORT at day {today}: price={entry:.2f}, stop={stop:.2f}, tp={tp:.2f}")
-            return -100
+            return -1000
 
     # crossName = 'ema50ema200Cross'
     # if df[crossName].any():
@@ -129,14 +136,11 @@ def getEMACross(df, emaOne, emaTwo):
 
     df['position'] = df[emaOneName] > df[emaTwoName]
     df['positionShift'] = df['position'].shift(1)
-    df.dropna(inplace=True)
 
     crossName = emaOneName + emaTwoName + "Cross"
-    df[crossName] = np.where(df['position'] == df['positionShift'], False, True)
+    df[crossName] = (df['position'] != df['positionShift']).fillna(False)
     
-    df = df.drop(columns='position')
-    df = df.drop(columns='positionShift')
-
+    df.drop(columns=['position', 'positionShift'], inplace=True)
     return df
 
 def getEMAPosition(df, emaOne, emaTwo):
@@ -180,16 +184,16 @@ def getEMAPosition(df, emaOne, emaTwo):
             if df.loc[i, crossName]:
                 # GREEN candle
                 if df.loc[i, 'price'] > df.loc[i - 1, 'price']:
-                    stopLoss = df.loc[i, emaTwoName]
                     stopPrice = df.loc[i, 'price']
-                    distance = stopPrice - stopLoss
+                    distance = abs(df.loc[i, emaTwoName] - stopPrice)
+                    stopLoss = stopPrice - distance
                     takeProfit = stopPrice + distance
                 # RED candle
                 else:
-                    stopLoss = df.loc[i, emaTwoName]
-                    stopPrice = df.loc[i - 1, 'price']
-                    distance = stopPrice - stopLoss
-                    takeProfit = stopPrice + distance
+                    stopPrice = df.loc[i, 'price']
+                    distance = abs(df.loc[i, emaTwoName] - stopPrice)
+                    stopLoss = stopPrice + distance
+                    takeProfit = stopPrice - distance
 
                 df.loc[i, 'stopLoss'] = stopLoss
                 df.loc[i, 'stopPrice'] = stopPrice
