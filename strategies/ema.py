@@ -147,18 +147,14 @@ def getEMAPosition(df, emaOne, emaTwo):
     """
     Gets the trading position using a two-EMA Crossover.
     Trading Rules:
-        1. stopLoss is the corresponding highest EMA (i.e. if emaOne is 50 and
-            emaTwo is 200, stopLoss is ema200)
-
-        2. For a BUY (GREEN Candle), the entry price (stopPrice) is the high of
+        1. The entry price (stopPrice) is the price of
             the previous completed candle
 
-        3. For a SELL (RED Candle), the entry price (stopPrice) is the low of
-            the previous completed candle
+        2. distance is the absolute difference between the corresponding highest
+            EMA and the stopPrice
 
-        4. The takeProfit is the absolute distance between the stopPrice and
-            stopLoss, added to a BUY stopPrice and subtracted from a SELL
-            stopPrice
+        3. The takeProfit and stopLoss are distance added or subtracted from
+            stopPrice correspondingly for a BUY or SELL
     """
 
     if emaOne == emaTwo:
