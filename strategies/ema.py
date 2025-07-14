@@ -2,37 +2,48 @@
 import numpy as np
 import pandas as pd
 
-### IMPLEMENT 'getMyPosition' FUNCTION #############
-### TO RUN, RUN 'eval.py' ##########################
-
 nInst = 50
 currentPos = np.zeros(nInst)
 
-# TODO: Store DataFrame so no need to recalculate historical data
-# df = None
+# Store DataFrames. No need to recalculate historical data
+DF = None
 
-# Global trade state for one instrument
-state = {
-    'active': False,
-    'direction': 0, # +1 long -1 short
-    'stoploss': 0.0,
-    'takeProfit': 0.0
-}
+class Trade:
+    def __init__(self, active, direction, entry, stopLoss, takeProfit):
+        self.active = active
+        self.direction = direction
+        self.entry = entry
+        self.stopLoss = stopLoss
+        self.takeProfit = takeProfit
+
+trades = np.ndarray(nInst, dtype=np.object_)
 
 def getMyPosition(prcSoFar):
     global currentPos
+    global dfs
     (nins, nt) = prcSoFar.shape
 
-    currentPos[0] = getMyPositionOne(prcSoFar[0])
+    if DF is None:
+        makeDF(prcSoFar, nins)
+    else:
+        updateDF(prcSoFar)
+
+    i = 0
+    currentPos[i] = getMyPositionOne(i)
 
     return currentPos
 
-def getMyPositionOne(prcSoFarOne):
-    # global df
-    global state
-    nt = prcSoFarOne.size
+def makeDF(prcSoFar, numInst):
+    DF = [None] * numInst
+    for i in range(numInst):
+        DF[i] = pd.DataFrame({'price': prcSoFar[i]})
 
-    df = pd.DataFrame({'price': prcSoFarOne})
+def getMyPositionOne(index):
+    global DF
+    if DF is None:
+        raise ValueError("DF is None")
+
+    df = DF[index]
     df = getEMA(df, 50)
     df = getEMA(df, 200)
     df = getEMACross(df, 50, 200)
