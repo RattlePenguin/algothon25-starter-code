@@ -6,7 +6,7 @@ nInst = 50
 currentPos = np.zeros(nInst)
 
 # Store DataFrames. No need to recalculate historical data
-DF = None
+DF = [None] * nInst
 
 class Trade:
     def __init__(self, active, direction, entry, stopLoss, takeProfit):
@@ -16,27 +16,30 @@ class Trade:
         self.stopLoss = stopLoss
         self.takeProfit = takeProfit
 
-trades = np.ndarray(nInst, dtype=np.object_)
+trades = [Trade(False, 0, 0.0, 0.0, 0.0)] * nInst
 
 def getMyPosition(prcSoFar):
     global currentPos
-    global dfs
     (nins, nt) = prcSoFar.shape
 
-    if DF is None:
+    if nins > 1 and DF[0] is None:
         makeDF(prcSoFar, nins)
     else:
-        updateDF(prcSoFar)
+        updateDF(prcSoFar, nins)
 
     i = 0
-    currentPos[i] = getMyPositionOne(i)
+    # currentPos[i] = getMyPositionOne(i)
 
+    print(DF)
     return currentPos
 
 def makeDF(prcSoFar, numInst):
-    DF = [None] * numInst
     for i in range(numInst):
         DF[i] = pd.DataFrame({'price': prcSoFar[i]})
+
+def updateDF(prcSoFar, numInst):
+    for i in range(numInst):
+        DF[i] = pd.concat(DF[i], prcSoFar[i][-1])
 
 def getMyPositionOne(index):
     global DF
