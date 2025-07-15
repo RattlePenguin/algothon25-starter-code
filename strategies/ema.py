@@ -31,7 +31,6 @@ def getMyPosition(prcSoFar):
     else:
         updateDF(prcSoFar, nins)
 
-    print(DF)
     for i in range(nInst):
         currentPos[i] = getMyPositionOne(i)
 
@@ -51,83 +50,39 @@ def updateDF(prcSoFar, numInst):
 def getMyPositionOne(index):
     global DF
     df = DF[index]
-    df = getEMA(df, 50)
-    df = getEMA(df, 200)
-    df = getEMACross(df, 50, 200)
+    df = getEMA(df, 9)
+    df = getEMA(df, 21)
+    df = getEMACross(df, 9, 21)
+    df = getMACD(df, 5, 13, 9)
 
     today = df.index[-1]
     priceToday = df.loc[today, 'price']
     priceYesterday = df.loc[today - 1, 'price'] if today > 0 else priceToday
 
-    # Exit strategy
-    if state['active']:
-        if state['direction'] == 1:
-            if priceToday <= state['stopLoss']:
-                print(f"Exiting LONG at day {today}: price={priceToday:.2f} — Hit STOP LOSS at {state['stopLoss']:.2f}")
-                state['active'] = False
+    if trades[index].active:
+        if trades[index].direction == 1:
+            if priceToday <= trades[index].stopLoss or priceToday >= trades[index].takeProfit:
+                trades[index].active = False
                 return 0
-            elif priceToday >= state['takeProfit']:
-                print(f"Exiting LONG at day {today}: price={priceToday:.2f} — Hit TAKE PROFIT at {state['takeProfit']:.2f}")
-                state['active'] = False
+        if trades[index].direction == -1:
+            if priceToday >= trades[index].stopLoss or priceToday <= trades[index].takeProfit:
+                trades[index].active = False
                 return 0
-            else:
-                return 1000  # maintain long position
 
-        elif state['direction'] == -1:
-            if priceToday >= state['stopLoss']:
-                print(f"Exiting SHORT at day {today}: price={priceToday:.2f} — Hit STOP LOSS at {state['stopLoss']:.2f}")
-                state['active'] = False
-                return 0
-            elif priceToday <= state['takeProfit']:
-                print(f"Exiting SHORT at day {today}: price={priceToday:.2f} — Hit TAKE PROFIT at {state['takeProfit']:.2f}")
-                state['active'] = False
-                return 0
-            else:
-                return -1000  # maintain short position
-
-
-    df = getEMAPosition(df, 50, 200)
-    crossName = "ema50ema200Cross"
-    if df.loc[today, crossName]:
-        if priceToday > priceYesterday:  # bullish candle
-            entry = priceToday
-            stop = df.loc[today, 'stopLoss']
-            tp = df.loc[today, 'takeProfit']
-            state = {
-                'active': True,
-                'direction': 1,
-                'stopLoss': stop,
-                'takeProfit': tp
-            }
-            print(f"Entering LONG at day {today}: price={entry:.2f}, stop={stop:.2f}, tp={tp:.2f}")
-            return 1000
-
-        elif priceToday < priceYesterday:  # bearish candle
-            entry = priceToday
-            stop = df.loc[today, 'stopLoss']
-            tp = df.loc[today, 'takeProfit']
-            state = {
-                'active': True,
-                'direction': -1,
-                'stopLoss': stop,
-                'takeProfit': tp
-            }
-            print(f"Entering SHORT at day {today}: price={entry:.2f}, stop={stop:.2f}, tp={tp:.2f}")
-            return -1000
-
-    # crossName = 'ema50ema200Cross'
-    # if df[crossName].any():
-    #     print(f"Crossover occurred at indices: {df.index[df[crossName]].tolist()}")
-    # else:
-    #     print("No crossover occurred.")
-
-    # trades = df[df['stopPrice'] > 0]
-
-    # if not trades.empty:
-    #     print(f"{len(trades)} trade(s) were generated. Indices:")
-    #     print(trades[['price', 'stopPrice', 'stopLoss', 'takeProfit']])
-    # else:
-    #     print("No trade entries generated.")
+    df = getEMAPosition(df, 9, 21)
+    crossName = "ema9ema21Cross"
+    if df.loc[today, crossName] == 1:
+        entry = priceToday
+        stopLoss = df.loc[today, 'stopLoss']
+        takeProfit = df.loc[today, 'takeProfit']
+        trades[index] = Trade(True, 1, entry, stopLoss, takeProfit)
+        return 1000
+    elif df.loc[today, crossName] == 1:
+        entry = priceToday
+        stopLoss = df.loc[today, 'stopLoss']
+        takeProfit = df.loc[today, 'takeProfit']
+        trades[index] = Trade(True, -1, entry, stopLoss, takeProfit)
+        return -1000
     return 0
 
 
@@ -155,10 +110,10 @@ def getEMACross(df, emaOne, emaTwo):
     df['position'] = df[emaOneName] > df[emaTwoName]
     df['positionShift'] = df['position'].shift(1)
 
-    print(df['position'] != df['positionShift'])
-
     crossName = emaOneName + emaTwoName + "Cross"
-    df[crossName] = (df['position'] != df['positionShift']).fillna(False)
+    df[crossName] = 0
+    df.loc[(df['positionShift'] == False) & (df['position'] == True), crossName] = 1
+    df.loc[(df['positionShift'] == True) & (df['position'] == False), crossName] = -1
     
     df.drop(columns=['position', 'positionShift'], inplace=True)
     return df
@@ -167,14 +122,10 @@ def getEMAPosition(df, emaOne, emaTwo):
     """
     Gets the trading position using a two-EMA Crossover.
     Trading Rules:
-        1. The entry price (stopPrice) is the price of
-            the previous completed candle
+        1. When EMA9 crosses over EMA21, buy at 500 volume. Vice versa for
+            cross unders.
 
-        2. distance is the absolute difference between the corresponding highest
-            EMA and the stopPrice
-
-        3. The takeProfit and stopLoss are distance added or subtracted from
-            stopPrice correspondingly for a BUY or SELL
+        2. Stop loss and take profit is the range of the previous 15 days.
     """
 
     if emaOne == emaTwo:
@@ -197,22 +148,37 @@ def getEMAPosition(df, emaOne, emaTwo):
             # Skip empty EMA rows
             continue
         else:
-            if df.loc[i, crossName]:
-                # GREEN candle
-                if df.loc[i, 'price'] > df.loc[i - 1, 'price']:
+            stopLoss = 0.0
+            stopPrice = 0.0
+            takeProfit = 0.0
+            if df.loc[i, crossName] == 1:
+                if df.loc[i, 'macd'] > 0:
                     stopPrice = df.loc[i, 'price']
-                    distance = abs(df.loc[i, emaTwoName] - stopPrice)
-                    stopLoss = stopPrice - distance
-                    takeProfit = stopPrice + distance
-                # RED candle
-                else:
+                    allowance = df['price'].iloc[-10:].max() - df['price'].iloc[-10:].min()
+                    stopLoss = stopPrice - allowance
+                    takeProfit = stopPrice + allowance
+            elif df.loc[i, crossName] == -1:
+                if df.loc[i, 'macd'] < 0:
                     stopPrice = df.loc[i, 'price']
-                    distance = abs(df.loc[i, emaTwoName] - stopPrice)
-                    stopLoss = stopPrice + distance
-                    takeProfit = stopPrice - distance
+                    allowance = df['price'].iloc[-10:].max() - df['price'].iloc[-10:].min()
+                    stopLoss = stopPrice + allowance
+                    takeProfit = stopPrice - allowance
 
-                df.loc[i, 'stopLoss'] = stopLoss
-                df.loc[i, 'stopPrice'] = stopPrice
-                df.loc[i, 'takeProfit'] = takeProfit
+        df.loc[i, 'stopLoss'] = stopLoss
+        df.loc[i, 'stopPrice'] = stopPrice
+        df.loc[i, 'takeProfit'] = takeProfit
+
+    return df
+
+def getMACD(df, fast, slow, signal):
+    df = getEMA(df, fast)
+    df = getEMA(df, slow)
+
+    emaFast = f"ema{fast}"
+    emaSlow = f"ema{slow}"
+    df['macdLine'] = df[emaFast] - df[emaSlow]
+
+    df['signal'] = df['macdLine'].ewm(span=signal, adjust=False).mean()
+    df['macd'] = df['macdLine'] - df['signal']
 
     return df
