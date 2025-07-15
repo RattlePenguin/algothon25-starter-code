@@ -6,7 +6,8 @@ nInst = 50
 currentPos = np.zeros(nInst)
 
 # Store DataFrames. No need to recalculate historical data
-DF = [None] * nInst
+DF = [pd.DataFrame() for _ in range(nInst)]
+DFInit = False
 
 class Trade:
     def __init__(self, active, direction, entry, stopLoss, takeProfit):
@@ -22,30 +23,33 @@ def getMyPosition(prcSoFar):
     global currentPos
     (nins, nt) = prcSoFar.shape
 
-    if nins > 1 and DF[0] is None:
+    global DF
+    global DFInit
+    if not DFInit:
         makeDF(prcSoFar, nins)
+        DFInit = True
     else:
         updateDF(prcSoFar, nins)
 
-    i = 0
-    # currentPos[i] = getMyPositionOne(i)
-
     print(DF)
+    for i in range(nInst):
+        currentPos[i] = getMyPositionOne(i)
+
     return currentPos
 
 def makeDF(prcSoFar, numInst):
+    global DF
     for i in range(numInst):
         DF[i] = pd.DataFrame({'price': prcSoFar[i]})
 
 def updateDF(prcSoFar, numInst):
+    global DF
     for i in range(numInst):
-        DF[i] = pd.concat(DF[i], prcSoFar[i][-1])
+        new = pd.DataFrame({'price': prcSoFar[i][-1]}, index=[0])
+        DF[i] = pd.concat([DF[i], new], ignore_index=True)
 
 def getMyPositionOne(index):
     global DF
-    if DF is None:
-        raise ValueError("DF is None")
-
     df = DF[index]
     df = getEMA(df, 50)
     df = getEMA(df, 200)
@@ -150,6 +154,8 @@ def getEMACross(df, emaOne, emaTwo):
 
     df['position'] = df[emaOneName] > df[emaTwoName]
     df['positionShift'] = df['position'].shift(1)
+
+    print(df['position'] != df['positionShift'])
 
     crossName = emaOneName + emaTwoName + "Cross"
     df[crossName] = (df['position'] != df['positionShift']).fillna(False)
